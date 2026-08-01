@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hero.png" alt="DocQWise - Read. Extract. Retrieve." width="100%">
+  <img src="https://raw.githubusercontent.com/VK-Ant/docqwise/main/assets/hero.png" alt="DocQWise: Read, Extract, Retrieve" width="100%">
 </p>
 
 <p align="center">
@@ -31,6 +31,12 @@ DocQWise is a pluggable, high-performance document intelligence engine for struc
 - **Self-improving** : user corrections stored as exact overrides, applied automatically
 - **Local-first** : zero cloud dependency, zero per-page cost, your data stays yours
 - **Deterministic** : same input = same output, always
+
+## Architecture
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/VK-Ant/docqwise/main/assets/arc.png" alt="arc" width="100%">
+</p>
 
 ## Installation
 

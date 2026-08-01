@@ -1,7 +1,7 @@
 [project]
 name = "docqwise"
 version = "0.1.0"
-description = "Read. Extract. Retrieve. — Document intelligence that adapts, accelerates, and scales."
+description = "Read, Extract, Retrieve:  Document intelligence that adapts, accelerates, and scales."
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.9"
