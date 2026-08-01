@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/docqwise/"><img src="https://img.shields.io/pypi/v/docqwise?color=green&label=PyPI" alt="PyPI"></a>
+  <a href="https://pypi.org/project/docqwise/"><img src="https://img.shields.io/badge/PyPI-docqwise-blue" alt="PyPI"></a>
   <a href="https://github.com/VK-Ant/docqwise/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
   <a href="https://github.com/VK-Ant/docqwise/blob/main/notebooks/docqwise_getting_started.ipynb">
         <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"></a>
