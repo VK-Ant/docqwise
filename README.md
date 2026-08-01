@@ -8,29 +8,29 @@
 
 <p align="center">
   <a href="https://pypi.org/project/docqwise/"><img src="https://img.shields.io/pypi/v/docqwise?color=green&label=PyPI" alt="PyPI"></a>
-  <a href="https://pypi.org/project/docqwise/"><img src="https://img.shields.io/pypi/pyversions/docqwise" alt="Python"></a>
   <a href="https://github.com/VK-Ant/docqwise/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
-  <a href="https://github.com/VK-Ant/docqwise/actions"><img src="https://img.shields.io/github/actions/workflow/status/VK-Ant/docqwise/ci.yml" alt="CI"></a>
+  <a href="https://github.com/VK-Ant/docqwise/blob/main/notebooks/docqwise_getting_started.ipynb">
+        <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"></a>
 </p>
 
 ---
 
 ## What is DocQWise?
 
-DocQWise is a pluggable, high-performance document intelligence engine for structured and unstructured data. Read any document format, extract exact structured data, and retrieve with semantic search — locally, at scale, for zero per-page cost.
+DocQWise is a pluggable, high-performance document intelligence engine for structured and unstructured data. Read any document format, extract exact structured data, and retrieve with semantic search : locally, at scale, for zero per-page cost.
 
 **Not a parser. Not a framework. A platform in a library.**
 
 ## Key Features
 
-- **Read anything** — PDF, DOCX, images, Excel, CSV, JSON, XML, databases, emails, presentations
-- **Extract everything** — text, tables, fields, forms, entities, images, layout with bounding boxes
-- **Pluggable everything** — bring your own OCR, vector DB, LLM, database, graph store
-- **Speed-first** — multiprocessing, async I/O, GPU batching, batch processing
-- **Incremental** — hash-based change detection, never reprocess unchanged files
-- **Self-improving** — user corrections stored as exact overrides, applied automatically
-- **Local-first** — zero cloud dependency, zero per-page cost, your data stays yours
-- **Deterministic** — same input = same output, always
+- **Read anything** : PDF, DOCX, images, Excel, CSV, JSON, XML, databases, emails, presentations
+- **Extract everything** : text, tables, fields, forms, entities, images, layout with bounding boxes
+- **Pluggable everything** : bring your own OCR, vector DB, LLM, database, graph store
+- **Speed-first** : multiprocessing, async I/O, GPU batching, batch processing
+- **Incremental** : hash-based change detection, never reprocess unchanged files
+- **Self-improving** : user corrections stored as exact overrides, applied automatically
+- **Local-first** : zero cloud dependency, zero per-page cost, your data stays yours
+- **Deterministic** : same input = same output, always
 
 ## Installation
 
@@ -145,7 +145,7 @@ result = dq.extract_fields("invoice.pdf", template="invoice")
 # Fix a wrong field
 result.correct({"tax": 1402.00, "po_number": "PO-8891"})
 
-# Next similar document — correction applied automatically
+# Next similar document : correction applied automatically
 result2 = dq.extract_fields("invoice_002.pdf")
 # tax and po_number now extracted correctly
 ```
@@ -241,10 +241,10 @@ DocQWise is part of the VK-Ant open-source AI ecosystem:
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE) for details.
+Apache License 2.0
 
 ## Author
 
-**Venkatkumar Rajan (VK-Ant)**
+**Venkatkumar Rajan**
 
 *Sometimes the ant carries the elephant.* 🐜
