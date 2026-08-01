@@ -1,0 +1,26 @@
+{
+  "company": "TechStart Solutions",
+  "fiscal_year": 2026,
+  "departments": [
+    {
+      "name": "Engineering",
+      "headcount": 45,
+      "budget": 2500000
+    },
+    {
+      "name": "Sales",
+      "headcount": 20,
+      "budget": 1200000
+    },
+    {
+      "name": "Marketing",
+      "headcount": 12,
+      "budget": 800000
+    },
+    {
+      "name": "Operations",
+      "headcount": 15,
+      "budget": 600000
+    }
+  ]
+}

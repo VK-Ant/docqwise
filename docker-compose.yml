@@ -1,0 +1,68 @@
+version: "3.9"
+
+services:
+  docqwise-api:
+    build:
+      context: .
+      target: server
+    ports:
+      - "8000:8000"
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      - docqwise-store:/app/docqwise_db
+      - docqwise-cache:/app/.docqwise_cache
+    environment:
+      - DOCQWISE_WORKERS=4
+      - DOCQWISE_STORE_PATH=/app/docqwise_db
+      - DOCQWISE_CACHE_DIR=/app/.docqwise_cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Qdrant vector store
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    profiles:
+      - with-qdrant
+
+  # Optional: PostgreSQL with pgvector
+  postgres:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=docqwise
+      - POSTGRES_USER=docqwise
+      - POSTGRES_PASSWORD=docqwise
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    profiles:
+      - with-postgres
+
+  # Optional: Neo4j for GraphRAG
+  neo4j:
+    image: neo4j:5-community
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/docqwise
+    volumes:
+      - neo4j-data:/data
+    profiles:
+      - with-neo4j
+
+volumes:
+  docqwise-store:
+  docqwise-cache:
+  qdrant-data:
+  postgres-data:
+  neo4j-data:

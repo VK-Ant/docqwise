@@ -1,0 +1,11 @@
+Date,Vendor,Product,Quantity,Unit_Price,Total,Region,Status
+2026-01-15,Acme Corp,Widget A,100,50.0,5000.0,North,Paid
+2026-01-22,Beta LLC,Widget B,200,35.0,7000.0,South,Paid
+2026-02-10,Acme Corp,Widget A,150,50.0,7500.0,North,Paid
+2026-02-28,Gamma Inc,Widget C,75,120.0,9000.0,East,Overdue
+2026-03-05,Beta LLC,Widget B,300,35.0,10500.0,South,Paid
+2026-03-18,Delta Co,Widget D,50,200.0,10000.0,West,Overdue
+2026-04-01,Acme Corp,Widget A,120,52.0,6240.0,North,Paid
+2026-04-15,Gamma Inc,Widget C,90,120.0,10800.0,East,Pending
+2026-05-01,Beta LLC,Widget B,250,36.0,9000.0,South,Paid
+2026-05-20,Delta Co,Widget D,80,195.0,15600.0,West,Pending
