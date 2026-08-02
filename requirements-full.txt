@@ -1,0 +1,76 @@
+# DocQWise full dependencies — all features
+# Install: pip install -r requirements-full.txt
+
+# Core
+pymupdf>=1.23.0
+python-docx>=1.0.0
+numpy>=1.24.0
+pillow>=10.0.0
+tqdm>=4.65.0
+pyyaml>=6.0
+click>=8.0.0
+
+# RAG pipeline
+sentence-transformers>=2.2.0
+
+# OCR
+easyocr>=1.7.0
+
+# NLP
+spacy>=3.7.0
+
+# ML framework
+torch>=2.0.0
+transformers>=4.35.0
+
+# HuggingFace quantization (for local LLM on GPU)
+bitsandbytes>=0.41.0
+accelerate>=0.24.0
+sentencepiece>=0.1.99
+
+# Structured data
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+# Search
+rank-bm25>=0.2.2
+
+# Validation
+pydantic>=2.0.0
+
+# HTML parsing
+beautifulsoup4>=4.12.0
+
+# Presentations
+python-pptx>=0.6.21
+
+# Data formats
+pyarrow>=14.0.0
+
+# REST API server
+fastapi>=0.104.0
+uvicorn>=0.24.0
+websockets>=12.0
+python-multipart>=0.0.6
+
+# Cloud APIs (optional — uncomment what you need)
+# openai>=1.0.0
+# anthropic>=0.20.0
+# boto3>=1.28.0
+
+# Vector stores (optional — uncomment what you need)
+# chromadb>=0.4.0
+# qdrant-client>=1.7.0
+# faiss-cpu>=1.7.0
+# psycopg2-binary>=2.9.0
+# pymongo>=4.6.0
+
+# Graph (optional)
+# networkx>=3.2.0
+# neo4j>=5.0.0
+
+# Dev
+pytest>=7.4.0
+pytest-cov>=4.1.0
+black>=23.0.0
+ruff>=0.1.0

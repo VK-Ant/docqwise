@@ -1,0 +1,28 @@
+# DocQWise ML dependencies — for AI-powered extraction and RAG
+# Install: pip install -r requirements-ml.txt
+
+# Core
+pymupdf>=1.23.0
+python-docx>=1.0.0
+numpy>=1.24.0
+pillow>=10.0.0
+tqdm>=4.65.0
+pyyaml>=6.0
+click>=8.0.0
+
+# RAG pipeline (embedding + retrieval)
+sentence-transformers>=2.2.0
+
+# OCR
+easyocr>=1.7.0
+
+# NLP
+spacy>=3.7.0
+
+# ML framework
+torch>=2.0.0
+transformers>=4.35.0
+
+# Structured data
+pandas>=2.0.0
+openpyxl>=3.1.0

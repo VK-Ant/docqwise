@@ -17,63 +17,35 @@
 
 ## What is DocQWise?
 
-DocQWise is a pluggable, high-performance document intelligence engine for structured and unstructured data. Read any document format, extract exact structured data, and retrieve with semantic search : locally, at scale, for zero per-page cost.
+DocQWise is a pluggable, AI-powered document intelligence engine. It reads any document format, extracts structured data using LLMs and RAG pipeline, and retrieves information with semantic search — locally, at scale, for zero per-page cost.
 
-**Not a parser. Not a framework. A platform in a library.**
+## Install
 
-## Key Features
-
-- **Read anything** : PDF, DOCX, images, Excel, CSV, JSON, XML, databases, emails, presentations
-- **Extract everything** : text, tables, fields, forms, entities, images, layout with bounding boxes
-- **Pluggable everything** : bring your own OCR, vector DB, LLM, database, graph store
-- **Speed-first** : multiprocessing, async I/O, GPU batching, batch processing
-- **Incremental** : hash-based change detection, never reprocess unchanged files
-- **Self-improving** : user corrections stored as exact overrides, applied automatically
-- **Local-first** : zero cloud dependency, zero per-page cost, your data stays yours
-- **Deterministic** : same input = same output, always
-
-## Architecture
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/VK-Ant/docqwise/main/assets/arc.png" alt="arc" width="100%">
-</p>
-
-## Installation
+Choose your install based on what you need:
 
 ```bash
-# Core (PDF, DOCX, TXT, images, SQLite store)
+# Option 1: Core only (PDF reading, regex extraction, no ML)
 pip install docqwise
 
-# With ML models (OCR, layout, embeddings)
-pip install docqwise[ml]
+# Option 2: With ML (RAG pipeline, embeddings, OCR — recommended)
+pip install -r requirements-ml.txt
 
-# Full processing (pandas, Excel, tables, BM25)
-pip install docqwise[full]
-
-# Cloud API connectors (OpenAI, Azure, AWS, Google)
-pip install docqwise[api]
-
-# Vector store connectors (Qdrant, FAISS, ChromaDB, pgvector)
-pip install docqwise[connectors]
-
-# GraphRAG (NetworkX, Neo4j, Kuzu)
-pip install docqwise[graph]
-
-# REST API server (FastAPI)
-pip install docqwise[server]
-
-# Everything
-pip install docqwise[all]
+# Option 3: Everything (all features, all formats)
+pip install -r requirements-full.txt
 ```
 
-## Docker
+### LLM backend (pick one)
 
 ```bash
-# Quick start
-docker run -p 8000:8000 -v ./docs:/data vkant/docqwise:latest
+# Ollama — local, free, recommended
+# Download from https://ollama.com then:
+ollama pull nemotron-mini
 
-# Docker Compose
-docker compose up -d
+# OR HuggingFace — local GPU
+pip install transformers torch bitsandbytes accelerate
+
+# OR OpenAI — cloud API
+export OPENAI_API_KEY=your-key
 ```
 
 ## Quick Start
@@ -83,165 +55,204 @@ from docqwise import Docqwise
 
 dq = Docqwise()
 
-# Ingest documents
+# Ingest any document
 dq.ingest("documents/")
 
-# Semantic search
-results = dq.retrieve("payment terms", top_k=5)
+# Extract fields with template
+result = dq.extract_fields("invoice.pdf", template="invoice")
+print(result.to_json())
 
-# Natural language Q&A
+# Ask questions about structured data
+dq.ingest("sales.csv")
 answer = dq.ask("What is the total amount?")
-
-# Field extraction
-fields = dq.extract_fields("invoice.pdf", template="invoice")
-
-# Table extraction
-tables = dq.extract_tables("report.pdf")
-df = tables[0].to_dataframe()
 ```
 
-## Extract from Any Source
+## Extraction Methods
 
 ```python
 dq = Docqwise()
 
-# Documents
-dq.ingest("report.pdf")
-dq.ingest("contract.docx")
-dq.ingest("scan.tiff")
+# RAG (default) — chunk → embed → retrieve → LLM extract
+dq.extract_fields("doc.pdf", template="invoice")
 
-# Structured data
-dq.ingest("data.csv")
-dq.ingest("transactions.xlsx")
+# Direct LLM
+dq.extract_fields("doc.pdf", template="invoice", method="llm")
 
-# Databases
-dq.ingest("postgresql://host/db", tables=["invoices"])
-dq.ingest("mongodb://host/db", collections=["contracts"])
+# Vision (scanned docs, handwriting)
+dq.extract_fields("scan.jpg", method="vision", model="gpt-4o")
 
-# Cloud storage
-dq.ingest("s3://bucket/documents/")
-
-# Folders (auto-detect all formats)
-dq.ingest("documents/")
+# Regex (fast, no ML)
+dq.extract_fields("doc.pdf", template="invoice", method="regex")
 ```
 
-## Field Extraction
+## LLM Backends
 
 ```python
-# Auto-detect fields
-fields = dq.extract_fields("invoice.pdf")
+# Ollama (local)
+dq.extract_fields("doc.pdf", model="nemotron-mini")
 
-# Schema-driven extraction
-fields = dq.extract_fields("invoice.pdf", schema={
-    "vendor_name": {"type": "string"},
-    "total": {"type": "number"},
-    "due_date": {"type": "date"},
-    "line_items": {"type": "array"},
-})
+# HuggingFace (local GPU)
+from docqwise.llm.hf_llm import HuggingFaceLLM
+llm = HuggingFaceLLM("Qwen/Qwen2.5-3B-Instruct", quantize="4bit")
+dq.extract_fields("doc.pdf", llm=llm)
 
-# Pre-built templates
-fields = dq.extract_fields("invoice.pdf", template="invoice")
+# OpenAI (cloud)
+dq.extract_fields("doc.pdf", model="gpt-4o-mini")
+```
+
+## Templates
+
+```python
+dq.extract_fields("invoice.pdf", template="invoice")
+dq.extract_fields("contract.pdf", template="contract")
+dq.extract_fields("resume.pdf", template="resume")
+dq.extract_fields("receipt.jpg", template="receipt")
+
+# Custom schema
+schema = {
+    "vendor": {"type": "string", "description": "Company name"},
+    "total": {"type": "number", "description": "Total amount"},
+}
+dq.extract_fields("doc.pdf", schema=schema)
+```
+
+
+## Custom Prompts
+
+You design the prompts. We run the pipeline.
+
+```python
+dq = Docqwise()
+
+# Default — docqwise handles the prompt
+dq.extract_fields("doc.pdf", template="invoice")
+
+# Your own prompt — full control
+dq.extract_fields("doc.pdf", prompt="""
+You are a medical record parser.
+Extract patient name, diagnosis, and prescribed medications.
+Return JSON only.
+
+Document:
+{context}
+
+JSON:
+""")
+
+# Your prompt template with schema
+dq.extract_fields("doc.pdf",
+    schema={"patient": {"type": "string"}, "diagnosis": {"type": "string"}},
+    prompt_template="""
+Given this extraction schema:
+{schema}
+
+Parse this document:
+{context}
+
+Return JSON matching the schema exactly.
+""")
 ```
 
 ## Self-Improving Corrections
 
 ```python
 result = dq.extract_fields("invoice.pdf", template="invoice")
-
-# Fix a wrong field
-result.correct({"tax": 1402.00, "po_number": "PO-8891"})
-
-# Next similar document : correction applied automatically
-result2 = dq.extract_fields("invoice_002.pdf")
-# tax and po_number now extracted correctly
+result.correct({"tax": 33300.00, "gst_number": "29AABCU9603R1ZM"})
+# Next similar document → corrections applied automatically
 ```
 
-## Query Structured Data
+## Structured Data Q&A
 
 ```python
 dq.ingest("sales.xlsx")
-
-dq.ask("What is the total amount?")         # → exact SUM computation
-dq.ask("Which vendor has highest sales?")    # → GROUP BY + MAX
-dq.ask("How many invoices are overdue?")     # → COUNT + WHERE filter
-
-dq.ingest("postgresql://host/db", tables=["invoices"])
-dq.ask("Show me vendors with outstanding invoices")  # → SQL JOIN
+dq.ask("What is the total amount?")         # exact SUM
+dq.ask("Which vendor has highest sales?")    # GROUP BY + MAX
+dq.ask("How many invoices are overdue?")     # COUNT + WHERE
 ```
 
-## Parallel Processing
+## All Features
 
 ```python
-dq = Docqwise(
-    workers=8,          # CPU processes
-    gpu_workers=2,      # GPU inference
-    threads=4,          # I/O threads
-    batch_size=32,      # model batch size
-)
+dq = Docqwise()
 
-await dq.ingest_async("documents/", show_progress=True)
-# ████████████████████░░░░ 8,421/10,000 | 142 docs/sec | ETA: 11s
+# Ingestion
+dq.ingest("file.pdf")                    # single file
+dq.ingest("documents/")                  # folder (all formats)
+dq.ingest("data.csv")                    # structured data
+
+# Extraction
+dq.extract_fields("doc.pdf")             # field extraction
+dq.extract_tables("doc.pdf")             # table extraction
+dq.extract_entities("doc.pdf")           # entity extraction
+dq.extract_images("doc.pdf")             # image extraction
+dq.extract_text("doc.pdf")               # text extraction
+dq.auto_extract("doc.pdf")               # auto-detect + extract
+
+# Intelligence
+dq.retrieve("query", top_k=5)            # semantic search
+dq.ask("question")                       # Q&A
+dq.classify("doc.pdf")                   # classification
+dq.compare("v1.pdf", "v2.pdf")           # comparison
+dq.detect_schema("data.csv")             # schema detection
+dq.detect_pii("doc.pdf")                 # PII detection
 ```
 
-## Pipeline DAG
+## Demos
 
-```python
-from docqwise.pipeline import Pipeline
+Run in order:
 
-pipe = Pipeline("invoice_processing")
-pipe.add_node("read", node_type="reader")
-pipe.add_node("ocr", node_type="ocr", engine="easyocr")
-pipe.add_node("extract", node_type="field_extractor", template="invoice")
-pipe.add_node("store", node_type="vector_store", backend="qdrant")
+| Demo | What | Install |
+|---|---|---|
+| `python demo/01_quickstart.py` | All core features | `pip install docqwise` |
+| `python demo/02_ollama.py` | AI extraction with Ollama | `ollama pull nemotron-mini` |
+| `python demo/03_huggingface.py` | AI extraction on GPU | `pip install transformers torch bitsandbytes accelerate` |
+| `python demo/04_rag.py` | Full RAG pipeline | `pip install sentence-transformers` |
 
-pipe.connect("read", "ocr")
-pipe.connect("ocr", "extract")
-pipe.connect("extract", "store")
-
-results = await pipe.run("invoices/", workers=8)
-```
-
-## Docker Deployment
+## Notebook
 
 ```bash
-# REST API server
-docker compose up -d
-
-# Access API
-curl -X POST http://localhost:8000/extract \
-  -F "file=@invoice.pdf" \
-  -F "template=invoice"
+pip install jupyter
+jupyter notebook notebooks/docqwise_getting_started.ipynb
 ```
 
-## MCP Server
-
-```python
-from docqwise.mcp import DocqwiseMCPServer
-
-server = DocqwiseMCPServer(store_path="./docqwise_db")
-server.run(port=8080)
-```
-
-## CLI
+## Testing
 
 ```bash
-docqwise ingest ./docs --workers 8 --progress
-docqwise extract invoice.pdf --template invoice
-docqwise query "payment terms" --top-k 5
-docqwise ask "What is the total?" --source data.xlsx
-docqwise serve --port 8000
-docqwise mcp --port 8080
+pip install pytest
+pytest -v
+```
+
+## Docker
+
+```bash
+docker compose up --build
+```
+
+## Architecture
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/VK-Ant/docqwise/main/assets/arc.png" alt="arc" width="100%">
+</p>
+
+
+```
+engine.py (stable — never changes)
+    └── factory.py (all component selection)
+            ├── ExtractorFactory  → rag | llm | vision | regex
+            ├── LLMFactory        → ollama | huggingface | openai
+            ├── EmbedderFactory   → sentence-transformers | any
+            ├── StoreFactory      → sqlite | qdrant | faiss | any
+            ├── ChunkerFactory    → structure | fixed | sentence
+            └── TemplateFactory   → invoice | contract | resume | receipt
 ```
 
 ## Ecosystem
-
-DocQWise is part of the VK-Ant open-source AI ecosystem:
 
 | Library | Tagline | Domain |
 |---|---|---|
 | [SightRAG](https://github.com/VK-Ant/SightRAG) | See. Search. Retrieve. | Visual intelligence |
 | [sonarwise](https://github.com/VK-Ant/sonarwise) | Hear. Search. Retrieve. | Audio intelligence |
-| **docqwise** | **Read. Extract. Retrieve.** | **Document intelligence** |
+| [docqwise](https://github.com/VK-Ant/docqwise) | **Read. Extract. Retrieve.** | **Document intelligence** |
 | [adaptive-intelligence](https://github.com/VK-Ant/adaptive-intelligence) | Learn. Remember. Adapt. | Orchestration |
 | [llmevalkit](https://github.com/VK-Ant/llmevalkit) | Evaluate. Score. Improve. | Evaluation |
 
@@ -252,5 +263,3 @@ Apache License 2.0
 ## Author
 
 **Venkatkumar Rajan**
-
-*Sometimes the ant carries the elephant.* 🐜
