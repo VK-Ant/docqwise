@@ -174,6 +174,7 @@ class StoreFactory:
 
     STORES = {
         "sqlite": "docqwise.stores.sqlite_store.SQLiteVectorStore",
+        "faiss": "docqwise.stores.faiss_store.FAISSVectorStore",
     }
 
     @classmethod
