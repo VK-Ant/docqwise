@@ -30,8 +30,8 @@ class LLMFieldExtractor(BaseFieldExtractor):
 
         # Priority 1: Ollama
         try:
-            import requests
-            requests.get("http://localhost:11434/api/tags", timeout=2)
+            from urllib.request import urlopen
+            urlopen("http://localhost:11434/api/tags", timeout=2)
             from docqwise.llm.ollama import OllamaLLM
             model = self._model or "nemotron-mini"
             self._llm = OllamaLLM(model=model)
@@ -64,7 +64,7 @@ class LLMFieldExtractor(BaseFieldExtractor):
 
     def extract_fields(self, document: DocqwiseDocument,
                        schema: dict = None, prompt: str = None,
-                       prompt_template: str = None) -> ExtractionResult:
+                       prompt_template: str = None, system_prompt: str = None) -> ExtractionResult:
         llm = self._get_llm()
 
         if llm is None:

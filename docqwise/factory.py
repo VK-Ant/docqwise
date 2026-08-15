@@ -92,8 +92,8 @@ class LLMFactory:
 
         # Ollama (local, free, fast startup)
         try:
-            import requests
-            requests.get("http://localhost:11434/api/tags", timeout=2)
+            from urllib.request import urlopen
+            urlopen("http://localhost:11434/api/tags", timeout=2)
             from docqwise.llm.ollama import OllamaLLM
             return OllamaLLM(model=model or "nemotron-mini")
         except Exception:
@@ -127,8 +127,8 @@ class LLMFactory:
         """List available LLM backends."""
         backends = []
         try:
-            import requests
-            requests.get("http://localhost:11434/api/tags", timeout=2)
+            from urllib.request import urlopen
+            urlopen("http://localhost:11434/api/tags", timeout=2)
             backends.append("ollama")
         except Exception:
             pass

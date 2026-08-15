@@ -57,7 +57,7 @@ def test_detect_pii(dq):
 
 def test_metrics(dq):
     m = dq.metrics()
-    assert m["version"] == "0.2.0"
+    assert m["version"] == "0.3.1"
 
 def test_learning(dq):
     r = dq.extract_fields("demo/sample_invoice.pdf", template="invoice", method="regex")
@@ -70,3 +70,28 @@ def test_factory_methods():
     assert "rag" in ExtractorFactory.available_methods()
     assert "invoice" in TemplateFactory.available()
     assert "faiss" in StoreFactory.STORES
+
+def test_ask_with_source(dq):
+    dq.ingest("demo/sample_sales.csv", embed=False)
+    result = dq.ask_with_source("What is the total amount?", source="demo/sample_sales.csv")
+    assert result.answer
+    assert result.source_name == "sample_sales.csv"
+    assert result.method == "computation"
+    assert result.confidence > 0
+
+def test_qa_answer_str(dq):
+    dq.ingest("demo/sample_sales.csv", embed=False)
+    result = dq.ask_with_source("What is the total?", source="demo/sample_sales.csv")
+    text = str(result)
+    assert "Source:" in text
+
+def test_ask_rag_general(dq):
+    dq.ingest("demo/sample_sales.csv", embed=False)
+    result = dq.ask_rag("What is the total?", mode="general")
+    assert "answer" in result
+
+def test_build_document_graph(dq):
+    graphrag = dq.build_document_graph(sources=["demo/sample_invoice.pdf"])
+    graph = graphrag.get_graph()
+    assert graph.node_count > 0
+    assert graph.edge_count > 0

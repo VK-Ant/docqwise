@@ -20,7 +20,7 @@ class RegexFieldExtractor(BaseFieldExtractor):
     }
 
     def extract_fields(self, document: DocqwiseDocument, schema: dict = None,
-                       prompt: str = None, prompt_template: str = None) -> ExtractionResult:
+                       prompt: str = None, prompt_template: str = None, system_prompt: str = None) -> ExtractionResult:
         text = document.text
         fields = {}
 

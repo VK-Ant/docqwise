@@ -226,7 +226,8 @@ class Docqwise:
     def extract_fields(self, source: str, schema: dict = None,
                        template: str = None, method: str = "auto",
                        llm=None, prompt: str = None,
-                       prompt_template: str = None, **kwargs) -> ExtractionResult:
+                       prompt_template: str = None,
+                       system_prompt: str = None, **kwargs) -> ExtractionResult:
         """Extract fields from a document.
 
         Args:
@@ -235,8 +236,9 @@ class Docqwise:
             template: pre-built template (invoice, contract, resume, receipt)
             method: auto | rag | llm | vision | regex
             llm: your own LLM instance
-            prompt: your own extraction prompt (full prompt text)
-            prompt_template: your prompt template with {text} and {schema} placeholders
+            prompt: your extraction prompt — use {context} for document text
+            prompt_template: your template — use {context} and {schema} placeholders
+            system_prompt: LLM system role (e.g. "You are a maritime document specialist")
             model: Ollama model name
         """
         self._ensure_initialized()
@@ -269,6 +271,7 @@ class Docqwise:
             result = extractor.extract_fields(
                 doc, schema=target_schema,
                 prompt=prompt, prompt_template=prompt_template,
+                system_prompt=system_prompt,
             )
 
         result._engine = self
@@ -365,9 +368,97 @@ class Docqwise:
                                               filters=kwargs.get("filters"))
         return []
 
+    def _ensure_qa_embedder(self):
+        if self._qa_engine._embedder is None:
+            from docqwise.factory import EmbedderFactory
+            embedder = EmbedderFactory.get(self._user_embedder)
+            if embedder:
+                self._qa_engine._embedder = embedder
+
     def ask(self, question: str, source: str = None, **kwargs) -> str:
         self._ensure_initialized()
+        self._ensure_qa_embedder()
         return self._qa_engine.ask(question, source=source)
+
+    def ask_with_source(self, question: str, source: str = None, **kwargs):
+        """Ask a question and get answer with source document attribution.
+
+        Returns:
+            QAAnswer with .answer, .source, .source_name, .confidence, .method
+        """
+        self._ensure_initialized()
+        self._ensure_qa_embedder()
+        return self._qa_engine.ask_with_source(question, source=source)
+
+    def ask_rag(self, question: str, mode: str = "general",
+                source: str = None, prompt: str = None,
+                system_prompt: str = None, **kwargs) -> dict:
+        """Ask using specific RAG strategy.
+
+        Modes:
+            general     — chunk → embed → retrieve → LLM (default)
+            graphrag    — extract entities → build graph → graph retrieval → LLM
+            multimodal  — text + images → vision LLM → combined
+
+        Args:
+            question: your question
+            mode: general | graphrag | multimodal
+            source: specific document path (optional)
+            prompt: custom LLM prompt — use {context} for document text, {question} for the question
+        """
+        self._ensure_initialized()
+        self._ensure_qa_embedder()
+        from docqwise.retrieval.rag_strategy import RAGStrategy
+        strategy = RAGStrategy(engine=self, mode=mode)
+        return strategy.ask(question, source=source, prompt=prompt, **kwargs)
+
+    def build_document_graph(self, sources: list[str] = None) -> Any:
+        """Build knowledge graph from documents for GraphRAG."""
+        self._ensure_initialized()
+        from docqwise.retrieval.graphrag import GraphRAGEngine
+        graphrag = GraphRAGEngine(self)
+        graphrag.build_from_ingested(sources=sources)
+        self._doc_graph = graphrag
+        return graphrag
+
+    def visualize_graph(self, output: str = "docqwise_graph.png",
+                        sources: list[str] = None) -> str:
+        """Generate graph visualization as image or HTML.
+
+        Args:
+            output: file path — .png, .svg, .pdf, .jpg, or .html
+            sources: list of document paths (builds from these, or uses all ingested)
+
+        Returns:
+            path to saved file
+        """
+        self._ensure_initialized()
+        if not hasattr(self, '_doc_graph') or self._doc_graph is None:
+            self.build_document_graph(sources=sources)
+
+        from docqwise.retrieval.graphrag import GraphVisualizer
+        graph = self._doc_graph.get_graph()
+        return GraphVisualizer.save(graph, output=output)
+
+    def visualize_query(self, question: str, output: str = "docqwise_query_graph.png",
+                        sources: list[str] = None) -> dict:
+        """Ask a question with GraphRAG and visualize the answer path.
+
+        Returns:
+            dict with "answer", "source", "evidence", "graph_file"
+        """
+        self._ensure_initialized()
+        if not hasattr(self, '_doc_graph') or self._doc_graph is None:
+            self.build_document_graph(sources=sources)
+
+        result = self._doc_graph.query(question)
+
+        from docqwise.retrieval.graphrag import GraphVisualizer
+        graph = self._doc_graph.get_graph()
+        GraphVisualizer.from_query(graph, result, output=output)
+
+        result["graph_file"] = output
+        return result
 
     def sql(self, query: str) -> list[dict]:
         from docqwise.databases.sqlite_db import SQLiteDB

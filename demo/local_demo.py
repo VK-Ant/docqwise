@@ -3,16 +3,15 @@ DocQWise: Process Your Local Documents
 ========================================
 
 Point at any folder. DocQWise reads everything inside.
-Search, extract, ask questions — all locally.
+Search, extract, ask questions — every answer shows which document it came from.
 
 Usage:
-    python local_demo.py                          # uses demo/ folder
-    python local_demo.py "C:/MyDocuments"         # your own folder
-    python local_demo.py "/home/user/invoices"    # Linux path
+    python local_demo.py                        # uses demo/ folder
+    python local_demo.py "C:/MyDocuments"       # your own folder
 
 Requirements:
     pip install docqwise sentence-transformers
-    ollama pull nemotron-mini    (optional, for AI extraction)
+    ollama pull nemotron-mini
 """
 
 import os
@@ -23,7 +22,6 @@ from docqwise import Docqwise
 
 
 def main():
-    # Get folder from command line or use demo/
     folder = sys.argv[1] if len(sys.argv) > 1 else "demo"
     folder = os.path.abspath(folder)
 
@@ -31,12 +29,11 @@ def main():
         print(f"Folder not found: {folder}")
         return
 
-    print(f"DocQWise — Local Document Intelligence")
+    print(f"DocQWise v0.3.0 — Local Document Intelligence")
     print(f"Folder: {folder}")
     print(f"=" * 50)
     print()
 
-    # Setup
     db_path = os.path.join(tempfile.gettempdir(), "docqwise_local_demo")
     if os.path.exists(db_path):
         shutil.rmtree(db_path, ignore_errors=True)
@@ -51,19 +48,19 @@ def main():
     elif backends:
         print(f"LLM: {backends[0]}")
     else:
-        print(f"LLM: none (using regex extraction)")
+        print(f"LLM: none (install Ollama for best results)")
     print()
 
-    # Step 1: Show what's in the folder
+    # Step 1: Show files
     print("[1] FILES FOUND")
+    EXTS = [".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv",
+            ".json", ".xml", ".yaml", ".yml", ".txt", ".md",
+            ".html", ".pptx", ".eml", ".msg", ".jpg", ".jpeg",
+            ".png", ".tiff", ".tif", ".parquet"]
     file_count = 0
     for root, dirs, files in os.walk(folder):
         for f in files:
-            ext = os.path.splitext(f)[1].lower()
-            if ext in [".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv",
-                       ".json", ".xml", ".yaml", ".yml", ".txt", ".md",
-                       ".html", ".pptx", ".eml", ".msg", ".jpg", ".jpeg",
-                       ".png", ".tiff", ".tif", ".parquet"]:
+            if os.path.splitext(f)[1].lower() in EXTS:
                 print(f"    {f}")
                 file_count += 1
     print(f"    Total: {file_count} documents")
@@ -74,8 +71,6 @@ def main():
     result = dq.ingest(folder, embed=False)
     print(f"    Processed: {result['processed']} files")
     print(f"    Time: {result['elapsed_s']}s")
-    if result.get("error_details"):
-        print(f"    Skipped: {result['errors']} files")
     print()
 
     # Step 3: Extract from each document
@@ -88,12 +83,10 @@ def main():
             path = os.path.join(root, f)
             print(f"    --- {f} ---")
 
-            # Classify
             labels = dq.classify(path)
             doc_type = labels[0]["label"] if labels else "unknown"
             print(f"    Type: {doc_type}")
 
-            # Extract fields
             result = dq.extract_fields(path, model="nemotron-mini")
             if result.fields:
                 for name, field in list(result.fields.items())[:8]:
@@ -101,10 +94,12 @@ def main():
                     print(f"    {name:22s} = {val}")
             print()
 
-    # Step 4: Interactive search
+    # Step 4: Interactive Q&A with source attribution
     print("[4] ASK YOUR DOCUMENTS")
+    print("    Every answer shows which document it came from.")
     print("    Type a question. Type 'quit' to exit.")
     print()
+
     while True:
         try:
             query = input("    > ").strip()
@@ -112,11 +107,16 @@ def main():
             break
         if not query or query.lower() == "quit":
             break
-        answer = dq.ask(query)
-        print(f"    {answer}")
+
+        # Get answer with source
+        result = dq.ask_with_source(query)
+        print(f"    Answer: {result.answer}")
+        if result.source_name:
+            print(f"    Source: {result.source_name}")
+        if result.method:
+            print(f"    Method: {result.method}")
         print()
 
-    # Cleanup
     shutil.rmtree(db_path, ignore_errors=True)
     print("Done.")
 

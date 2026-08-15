@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/docqwise/"><img src="https://img.shields.io/badge/PyPI-docqwise-blue" alt="PyPI"></a>
+  <a href="https://pypi.org/project/docqwise/"><img src="https://img.shields.io/badge/PyPI-v0.3.1-green" alt="PyPI"></a>
   <a href="https://github.com/VK-Ant/docqwise/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
   <a href="https://github.com/VK-Ant/docqwise/blob/main/notebooks/docqwise_getting_started.ipynb">
         <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"></a>
@@ -153,6 +153,38 @@ Return JSON matching the schema exactly.
 """)
 ```
 
+## System Prompt
+
+Set the LLM's role before extraction. Works with all backends and all RAG modes.
+
+```python
+# Set the role — LLM behaves as this specialist
+dq.extract_fields("invoice.pdf",
+    system_prompt="You are a maritime document specialist with 20 years experience.",
+    prompt="Extract vessel name, port, and total cost.
+
+Document:
+{context}
+
+JSON:",
+)
+
+# System prompt + schema + template — full control
+dq.extract_fields("contract.pdf",
+    system_prompt="You are a legal analyst specializing in shipping law.",
+    schema={"parties": {"type": "array"}, "liability": {"type": "number"}},
+    prompt_template="Extract {schema} from:
+{context}
+JSON:",
+)
+
+# System prompt with GraphRAG
+dq.ask_rag("What is the liability cap?",
+    mode="graphrag",
+    system_prompt="You are a risk analyst. Be precise with numbers.",
+)
+```
+
 ## Self-Improving Corrections
 
 ```python
@@ -168,6 +200,64 @@ dq.ingest("sales.xlsx")
 dq.ask("What is the total amount?")         # exact SUM
 dq.ask("Which vendor has highest sales?")    # GROUP BY + MAX
 dq.ask("How many invoices are overdue?")     # COUNT + WHERE
+```
+
+## Source Attribution
+
+Every answer tells you which document it came from.
+
+```python
+# Simple ask — shows source in output
+answer = dq.ask("What is the total amount?")
+print(answer)
+# 2,18,300.00
+#   Source: sample_invoice.pdf
+
+# Detailed answer with metadata
+result = dq.ask_with_source("What is the governing law?")
+print(result.answer)        # "laws of India"
+print(result.source_name)   # "sample_contract.pdf"
+print(result.confidence)    # 0.85
+print(result.method)        # "llm"
+```
+
+## RAG Modes
+
+Choose your retrieval strategy:
+
+```python
+dq = Docqwise()
+dq.ingest("documents/")
+
+# General RAG (default) — chunk → embed → retrieve → LLM
+result = dq.ask_rag("total amount?", mode="general")
+
+# GraphRAG — entity graph → graph traversal → cross-document answers
+result = dq.ask_rag("Who is the vendor for PO-2012?", mode="graphrag")
+print(result["answer"])         # "SuperStore"
+print(result["source"])         # "invoice_001.pdf"
+print(result["evidence"])       # [{entity, relation, target}, ...]
+
+# Multimodal RAG — text + images → vision LLM
+result = dq.ask_rag("What is in this scan?", mode="multimodal", source="scan.jpg")
+```
+
+## Graph Visualization
+
+Build and visualize document knowledge graphs:
+
+```python
+dq = Docqwise()
+dq.ingest("documents/")
+
+# Build knowledge graph from all documents
+graphrag = dq.build_document_graph()
+graph = graphrag.get_graph()
+print(f"Nodes: {graph.node_count}, Edges: {graph.edge_count}")
+
+# Generate interactive HTML visualization
+dq.visualize_graph(output="my_graph.html")
+# Open my_graph.html in browser — interactive, color-coded, draggable nodes
 ```
 
 ## All Features

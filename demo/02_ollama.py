@@ -140,7 +140,27 @@ JSON:""",
         print(f"   {name:20s} = {field.value}")
     print()
 
-    # ── 7. Prompt Template with Schema ──
+    # ── 7. System Prompt (set LLM role) ──
+    print("7. SYSTEM PROMPT (set the LLM role)")
+    print("-" * 60)
+    result = dq.extract_fields(
+        "demo/sample_invoice.pdf",
+        model=MODEL,
+        system_prompt="You are a senior financial auditor at a Big 4 firm. Be precise with numbers. Flag any discrepancies.",
+        prompt="""Review this invoice. Extract vendor, total, tax, and verify tax calculation.
+
+Document:
+{context}
+
+Return JSON: {"vendor": "...", "total": ..., "tax": ..., "tax_correct": true/false}
+JSON:""",
+    )
+    print(f"   Strategy: {result.strategy_used}")
+    for name, field in result.fields.items():
+        print(f"   {name:20s} = {field.value}")
+    print()
+
+    # ── 8. Prompt Template with Schema ──
     print("7. PROMPT TEMPLATE (your template + your schema)")
     print("-" * 60)
     result = dq.extract_fields(
@@ -170,7 +190,7 @@ JSON:""",
     print()
 
     # ── 8. Structured Data Q&A ──
-    print("8. STRUCTURED DATA Q&A (exact computation)")
+    print("9. STRUCTURED DATA Q&A (exact computation)")
     print("-" * 60)
     dq.ingest("demo/sample_sales.csv", embed=False)
     for q in ["What is the total amount?", "What is the average amount?"]:
@@ -180,7 +200,7 @@ JSON:""",
     print()
 
     # ── 9. Document Classification ──
-    print("9. CLASSIFICATION")
+    print("10. CLASSIFICATION")
     print("-" * 60)
     for doc_path in ["demo/sample_invoice.pdf", "demo/sample_contract.pdf"]:
         labels = dq.classify(doc_path)

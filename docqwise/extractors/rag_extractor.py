@@ -42,14 +42,15 @@ class RAGExtractor:
         self._chunker = chunker
         self._chunk_top_k = chunk_top_k
         self._model = model
+        self._system_prompt = None
 
     def _ensure_llm(self):
         if self._llm is not None:
             return self._llm
         # Auto-detect available LLM
         try:
-            import requests
-            requests.get("http://localhost:11434/api/tags", timeout=2)
+            from urllib.request import urlopen
+            urlopen("http://localhost:11434/api/tags", timeout=2)
             from docqwise.llm.ollama import OllamaLLM
             self._llm = OllamaLLM(model=self._model or "nemotron-mini")
             return self._llm
@@ -87,7 +88,7 @@ class RAGExtractor:
 
     def extract_fields(self, document: DocqwiseDocument,
                        schema: dict = None, prompt: str = None,
-                       prompt_template: str = None) -> ExtractionResult:
+                       prompt_template: str = None, system_prompt: str = None) -> ExtractionResult:
         """Extract fields using RAG pipeline. Full document, no truncation.
 
         Args:
@@ -123,6 +124,8 @@ class RAGExtractor:
             for chunk, emb in zip(chunks, embeddings):
                 chunk.embedding = emb
 
+        self._system_prompt = system_prompt
+
         # Step 3: Extract — user prompt takes priority
         if prompt:
             context = "\n\n".join([c.text for c in chunks])
@@ -148,7 +151,7 @@ class RAGExtractor:
             final_prompt = prompt.replace("{context}", context)
         else:
             final_prompt = f"{prompt}\n\nDocument:\n{context}"
-        response = llm.generate(final_prompt)
+        response = llm.generate(final_prompt, system_prompt=self._system_prompt)
         return self._parse_response_to_fields(response)
 
     def _extract_with_user_template(self, llm, document, chunks, schema, embedder, template):
@@ -166,7 +169,7 @@ class RAGExtractor:
 
         schema_str = json_mod.dumps(schema, indent=2) if schema else ""
         final_prompt = template.replace("{context}", context).replace("{schema}", schema_str)
-        response = llm.generate(final_prompt)
+        response = llm.generate(final_prompt, system_prompt=self._system_prompt)
         return self._parse_response_to_fields(response, schema)
 
     def _extract_with_schema_rag(self, llm, document, chunks, schema, embedder):
@@ -208,7 +211,7 @@ class RAGExtractor:
                 f"JSON:"
             )
 
-            response = llm.generate(prompt)
+            response = llm.generate(prompt, system_prompt=self._system_prompt)
             parsed = self._parse_json(response)
 
             for fname, value in parsed.items():
@@ -242,7 +245,7 @@ class RAGExtractor:
                 f"JSON:"
             )
 
-            response = llm.generate(prompt)
+            response = llm.generate(prompt, system_prompt=self._system_prompt)
             parsed = self._parse_json(response)
 
             for key, value in parsed.items():
