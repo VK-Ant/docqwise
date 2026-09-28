@@ -519,11 +519,6 @@ docker compose up --build
 
 ---
 
-## Ant Intelligence Ecosystem Documentation: https://vk-ant.github.io/ant-intelligence-ecosystem/#home 
-
-
----
-
 ## License
 
 Apache License 2.0
@@ -531,3 +526,10 @@ Apache License 2.0
 ## Author
 
 **Venkatkumar Rajan**
+
+---
+
+## Ant Intelligence Ecosystem 
+
+Documentation: https://vk-ant.github.io/ant-intelligence-ecosystem/#home 
+
