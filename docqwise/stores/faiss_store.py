@@ -104,8 +104,8 @@ class FAISSVectorStore(BaseVectorStore):
                 "source_path": getattr(chunk.metadata, "source_path", ""),
             }
             rows.append((
-                chunk.doc_id,
-                chunk.chunk_index,
+                getattr(chunk, "doc_id", None) or getattr(chunk.metadata, "doc_id", ""),
+                getattr(chunk, "chunk_index", None) or getattr(chunk.metadata, "chunk_index", 0),
                 chunk.text,
                 getattr(chunk.metadata, "page_num", 0),
                 meta.get("source_path", ""),
