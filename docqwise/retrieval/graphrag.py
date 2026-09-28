@@ -1,430 +1,424 @@
-"""GraphRAG Engine.
+"""GraphRAG engine — entity-graph-enhanced retrieval and Q&A.
 
-Builds a knowledge graph from documents, then uses graph structure
-for retrieval. Finds connections that vector search misses.
-
-Pipeline:
-  1. Extract entities from all ingested documents
-  2. Extract relations between entities
-  3. Build document-entity graph
-  4. Query: find relevant entities → traverse graph → collect evidence → LLM answer
-
-Example:
-    Invoice → Vendor(Acme) → PO(PO-2012) → Order(MX-2012)
-    Contract → Party(Acme) → Liability(5,00,000)
-
-    Q: "What is Acme's liability?"
-    → Graph finds: Acme → Contract → Liability → 5,00,000
-    → Answer with full evidence chain
+Extracts entities from documents, builds a knowledge graph,
+traverses the graph for context, then uses LLM for answers
+with evidence chains.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
+from dataclasses import dataclass, field
 from typing import Any, Optional
-
-from docqwise.graph.document_graph import DocumentGraph
 
 logger = logging.getLogger("docqwise")
 
 
+@dataclass
+class DocumentGraph:
+    """In-memory document knowledge graph."""
+    nodes: dict = field(default_factory=dict)  # {entity_text: {type, sources, fields}}
+    edges: list = field(default_factory=list)   # [{source, target, relation, doc_id}]
+    documents: dict = field(default_factory=dict)  # {doc_id: {path, entities, fields}}
+
+    def add_entity(self, text: str, entity_type: str, doc_id: str, source_path: str = ""):
+        key = text.lower().strip()
+        if key not in self.nodes:
+            self.nodes[key] = {
+                "text": text, "type": entity_type,
+                "sources": set(), "doc_ids": set(),
+            }
+        self.nodes[key]["sources"].add(source_path)
+        self.nodes[key]["doc_ids"].add(doc_id)
+
+    def add_edge(self, source: str, target: str, relation: str, doc_id: str = ""):
+        self.edges.append({
+            "source": source.lower().strip(),
+            "target": target.lower().strip(),
+            "relation": relation,
+            "doc_id": doc_id,
+        })
+
+    def neighbors(self, entity: str, depth: int = 1) -> list[dict]:
+        """Get neighboring entities up to depth."""
+        key = entity.lower().strip()
+        visited = {key}
+        current = [key]
+        result = []
+
+        for _ in range(depth):
+            next_level = []
+            for node in current:
+                for edge in self.edges:
+                    neighbor = None
+                    if edge["source"] == node and edge["target"] not in visited:
+                        neighbor = edge["target"]
+                    elif edge["target"] == node and edge["source"] not in visited:
+                        neighbor = edge["source"]
+                    if neighbor and neighbor in self.nodes:
+                        visited.add(neighbor)
+                        next_level.append(neighbor)
+                        result.append({
+                            **self.nodes[neighbor],
+                            "relation": edge["relation"],
+                            "sources": list(self.nodes[neighbor].get("sources", set())),
+                            "doc_ids": list(self.nodes[neighbor].get("doc_ids", set())),
+                        })
+            current = next_level
+
+        return result
+
+    def to_dict(self) -> dict:
+        """Serialize graph."""
+        nodes = {}
+        for k, v in self.nodes.items():
+            nodes[k] = {**v, "sources": list(v.get("sources", set())),
+                        "doc_ids": list(v.get("doc_ids", set()))}
+        return {"nodes": nodes, "edges": self.edges, "documents": self.documents}
+
+    def stats(self) -> dict:
+        return {
+            "nodes": len(self.nodes),
+            "edges": len(self.edges),
+            "documents": len(self.documents),
+        }
+
+
 class GraphRAGEngine:
-    """Graph-enhanced RAG. Builds knowledge graph, retrieves via graph traversal."""
+    """Build knowledge graphs from documents and query them with LLM."""
 
-    def __init__(self, engine=None):
-        self._engine = engine
-        self._graph = DocumentGraph()
-        self._doc_texts = {}
+    def __init__(self, llm=None, embedder=None):
+        self._llm = llm
+        self._embedder = embedder
+        self.graph = DocumentGraph()
 
-    def build_from_ingested(self, sources: list[str] = None):
-        """Build knowledge graph from ingested documents."""
-        if self._engine is None:
-            return
+    def _ensure_llm(self):
+        if self._llm:
+            return self._llm
+        try:
+            import urllib.request
+            urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
+            from docqwise.llm.ollama import OllamaLLM
+            self._llm = OllamaLLM(model="nemotron-mini")
+            return self._llm
+        except Exception:
+            pass
+        return None
 
-        # Get all ingested files
-        if sources:
-            files = sources
-        else:
-            from docqwise.connectors.filesystem import FilesystemConnector
-            fs = FilesystemConnector()
-            # Try to find files from store
-            files = []
-            if hasattr(self._engine, '_reader') and self._engine._reader:
-                # Check demo folder as default
-                if os.path.exists("demo"):
-                    files = fs.list_files("demo", extensions=self._engine._reader.supported_formats())
+    def build_from_documents(self, documents: list, reader=None) -> DocumentGraph:
+        """Build graph from document objects or file paths."""
+        for doc_or_path in documents:
+            if isinstance(doc_or_path, str) and reader:
+                doc = reader.read(doc_or_path)
+            else:
+                doc = doc_or_path
 
-        for fpath in files:
-            try:
-                self._build_from_file(fpath)
-            except Exception as e:
-                logger.debug(f"GraphRAG skip {fpath}: {e}")
+            doc_id = getattr(doc, "doc_id", str(id(doc)))
+            source = getattr(doc, "source_path", "")
+            text = getattr(doc, "text", str(doc))
 
-        logger.info(f"GraphRAG: {self._graph.node_count} nodes, {self._graph.edge_count} edges")
+            # Extract entities
+            entities = self._extract_entities(text, doc_id, source)
 
-    def _build_from_file(self, fpath: str):
-        """Extract entities and relations from a single file, add to graph."""
-        doc = self._engine._reader.read(fpath)
-        fname = os.path.basename(fpath)
-        self._doc_texts[fname] = doc.text
+            # Extract fields
+            fields = self._extract_fields_simple(text)
 
-        # Add document node
-        labels = self._engine.classify(fpath)
-        doc_type = labels[0]["label"] if labels else "document"
-        self._graph.add_document(fname, {"type": doc_type, "path": fpath})
+            self.graph.documents[doc_id] = {
+                "path": source,
+                "entities": [e["text"] for e in entities],
+                "fields": fields,
+            }
 
-        # Extract entities
-        entities = self._engine.extract_entities(fpath, method="regex")
-        for entity in entities:
-            entity_id = f"{entity.entity_type}:{entity.text}".lower().replace(" ", "_")
-            self._graph.add_entity(entity_id, entity.entity_type, entity.text)
-            self._graph.add_edge(fname, entity_id, "contains")
+            # Add edges between entities in same document
+            entity_keys = [e["text"].lower().strip() for e in entities]
+            for i, e1 in enumerate(entity_keys):
+                for e2 in entity_keys[i + 1:]:
+                    if e1 != e2:
+                        self.graph.add_edge(e1, e2, "co_occurs", doc_id)
 
-        # Extract fields
-        result = self._engine.extract_fields(fpath, method="regex")
-        for field_name, field in result.fields.items():
-            field_id = f"field:{field_name}:{str(field.value)[:30]}".lower().replace(" ", "_")
-            self._graph.add_entity(field_id, "FIELD", f"{field_name}: {field.value}")
-            self._graph.add_edge(fname, field_id, "has_field")
+        return self.graph
 
-        # Connect entities across documents (same entity in multiple docs)
-        # This is what makes GraphRAG powerful — cross-document connections
+    def build_from_ingested(self, sources: list[str], reader=None) -> DocumentGraph:
+        """Build graph from file paths."""
+        return self.build_from_documents(sources, reader=reader)
 
     def query(self, question: str, source: str = None, prompt: str = None) -> dict:
-        """Query using graph-enhanced retrieval."""
-        # Step 1: Find relevant entities from question
-        relevant_nodes = self._graph.query(question)
+        """Query the graph with a natural language question."""
+        llm = self._ensure_llm()
 
-        # Step 2: Traverse graph to find connected evidence
-        evidence_chain = []
-        connected_docs = set()
-        for node in relevant_nodes:
-            node_id = node.get("id", "")
-            neighbors = self._graph.neighbors(node_id, hops=2)
-            for neighbor in neighbors:
-                evidence_chain.append({
-                    "entity": node.get("text", node_id),
-                    "relation": "connected_to",
-                    "target": neighbor.get("text", neighbor.get("id", "")),
-                    "target_type": neighbor.get("type", ""),
+        # Find relevant entities from the question
+        question_entities = self._find_question_entities(question)
+
+        # Get graph context via traversal
+        graph_context = []
+        highlighted_nodes = set()
+        for entity in question_entities:
+            neighbors = self.graph.neighbors(entity, depth=2)
+            for n in neighbors:
+                highlighted_nodes.add(n.get("text", "").lower())
+                graph_context.append(
+                    f"- {n['text']} ({n['type']}): related via '{n.get('relation', 'unknown')}'"
+                )
+            if entity in self.graph.nodes:
+                highlighted_nodes.add(entity)
+                node = self.graph.nodes[entity]
+                graph_context.append(
+                    f"- {node['text']} ({node['type']}): found in {list(node.get('sources', set()))}"
+                )
+
+        context_text = "\n".join(graph_context) if graph_context else "No graph context found."
+
+        # Build evidence chain
+        evidence = []
+        for entity in question_entities:
+            if entity in self.graph.nodes:
+                node = self.graph.nodes[entity]
+                evidence.append({
+                    "entity": node["text"],
+                    "type": node["type"],
+                    "sources": list(node.get("sources", set())),
                 })
-                # Collect document sources
-                if neighbor.get("type") in ("invoice", "contract", "report", "receipt", "document"):
-                    connected_docs.add(neighbor.get("id", ""))
 
-        # Step 3: Get text from connected documents
-        context_parts = []
-        for doc_name in connected_docs:
-            if doc_name in self._doc_texts:
-                context_parts.append(f"[{doc_name}]\n{self._doc_texts[doc_name]}")
+        if llm:
+            if prompt:
+                if "{context}" in prompt:
+                    final_prompt = prompt.replace("{context}", context_text)
+                else:
+                    final_prompt = f"{prompt}\n\nGraph context:\n{context_text}"
+            else:
+                final_prompt = (
+                    f"Answer this question using the knowledge graph context below.\n\n"
+                    f"Question: {question}\n\n"
+                    f"Graph context:\n{context_text}\n\n"
+                    f"Answer concisely with evidence."
+                )
+            answer = llm.generate(final_prompt)
+        else:
+            answer = context_text
 
-        # If no graph results, fall back to all doc texts
-        if not context_parts:
-            for doc_name, text in list(self._doc_texts.items())[:3]:
-                context_parts.append(f"[{doc_name}]\n{text}")
-
-        context = "\n\n".join(context_parts)
-
-        # Step 4: LLM answer from graph-retrieved context
-        answer = self._answer_with_llm(question, context, prompt=prompt)
-
-        # Find primary source
-        primary_source = ""
-        if connected_docs:
-            primary_source = list(connected_docs)[0]
-        elif relevant_nodes:
-            primary_source = relevant_nodes[0].get("id", "")
+        source_name = ""
+        if evidence:
+            source_name = evidence[0].get("sources", [""])[0]
 
         return {
             "answer": answer,
-            "source": primary_source,
+            "evidence": evidence,
+            "source": source_name,
+            "source_name": os.path.basename(source_name) if source_name else "",
             "method": "graphrag",
-            "confidence": 0.88,
-            "evidence": evidence_chain[:10],
-            "graph_stats": {
-                "nodes_searched": len(relevant_nodes),
-                "evidence_chain_length": len(evidence_chain),
-                "connected_documents": list(connected_docs),
-            },
+            "confidence": min(0.95, 0.7 + 0.05 * len(evidence)),
+            "highlighted_nodes": list(highlighted_nodes),
+            "graph_stats": self.graph.stats(),
         }
 
-    def _answer_with_llm(self, question: str, context: str, prompt: str = None) -> str:
-        try:
-            from docqwise.factory import LLMFactory
-            llm = LLMFactory.get()
-            if llm:
-                if prompt:
-                    # User's custom prompt
-                    final_prompt = prompt.replace("{context}", context).replace("{question}", question)
-                else:
-                    final_prompt = (
-                        f"Answer this question using the document evidence below.\n"
-                        f"Be specific. Cite which document the answer came from.\n\n"
-                        f"Question: {question}\n\n"
-                        f"Evidence:\n{context}\n\n"
-                        f"Answer:"
-                    )
-                return llm.generate(final_prompt).strip()
-        except Exception:
-            pass
+    def _extract_entities(self, text: str, doc_id: str, source: str) -> list[dict]:
+        """Extract entities using regex patterns."""
+        entities = []
+        patterns = {
+            "MONEY": r'(?:Rs\.?|₹|\$|€|£)\s*[\d,]+(?:\.\d{2})?|[\d,]+(?:\.\d{2})?\s*(?:USD|INR|EUR|GBP)',
+            "DATE": r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{1,2},?\s*\d{4}',
+            "EMAIL": r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+            "PHONE": r'(?:\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',
+            "ORG": r'(?:(?:[A-Z][a-z]+\s+){1,3}(?:Inc|LLC|Ltd|Corp|Co|Group|Solutions|Services|Technologies|Enterprises|International)\.?)',
+            "PERSON": r'(?:Mr\.|Mrs\.|Ms\.|Dr\.)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+',
+        }
 
-        # No LLM — return relevant context
-        return context[:500] if context else "No evidence found."
+        for etype, pattern in patterns.items():
+            for match in re.finditer(pattern, text):
+                entity_text = match.group().strip()
+                if len(entity_text) > 2:
+                    self.graph.add_entity(entity_text, etype, doc_id, source)
+                    entities.append({"text": entity_text, "type": etype})
 
-    def get_graph(self) -> DocumentGraph:
-        return self._graph
+        return entities
 
-    def visualize(self) -> str:
-        """Generate HTML visualization of the document graph."""
-        return GraphVisualizer.to_html(self._graph)
+    def _extract_fields_simple(self, text: str) -> dict:
+        """Extract key-value pairs with simple regex."""
+        fields = {}
+        for line in text.split("\n"):
+            match = re.match(r'^([A-Za-z][A-Za-z\s]{2,30}):\s*(.+)$', line.strip())
+            if match:
+                key = match.group(1).strip().lower().replace(" ", "_")
+                value = match.group(2).strip()
+                if value and len(value) < 200:
+                    fields[key] = value
+        return fields
+
+    def _find_question_entities(self, question: str) -> list[str]:
+        """Find entities from the graph that appear in the question."""
+        q_lower = question.lower()
+        found = []
+        for key, node in self.graph.nodes.items():
+            if key in q_lower or node["text"].lower() in q_lower:
+                found.append(key)
+
+        # Also try partial word matching
+        q_words = set(q_lower.split())
+        for key, node in self.graph.nodes.items():
+            if key not in found:
+                node_words = set(key.split())
+                if node_words & q_words:
+                    found.append(key)
+
+        return found[:10]  # Limit
 
 
 class GraphVisualizer:
-    """Generate graph visualization as PNG, SVG, or HTML."""
+    """Visualize document knowledge graphs."""
 
-    @staticmethod
-    def to_image(graph: DocumentGraph, output: str = "docqwise_graph.png",
-                 width: int = 16, height: int = 12, dpi: int = 150,
-                 highlight_nodes: list[str] = None, highlight_edges: list[tuple] = None,
-                 title: str = None) -> str:
-        """Generate PNG or SVG image of the document graph.
+    def __init__(self, graph: DocumentGraph):
+        self.graph = graph
+        self._highlighted = set()
 
-        Args:
-            graph: DocumentGraph instance
-            output: file path (.png, .svg, .pdf, .jpg)
-            width: figure width in inches
-            height: figure height in inches
-            dpi: resolution (higher = sharper, larger file)
+    @classmethod
+    def from_query(cls, graph: DocumentGraph, query_result: dict) -> "GraphVisualizer":
+        """Create visualizer with query-aware highlighting."""
+        viz = cls(graph)
+        viz._highlighted = set(query_result.get("highlighted_nodes", []))
+        return viz
 
-        Returns:
-            path to saved image file
-        """
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        import networkx as nx
+    def to_image(self, output: str, highlight: set = None, format: str = "png",
+                 figsize: tuple = (16, 12), dpi: int = 150) -> str:
+        """Render graph to PNG/SVG/PDF using matplotlib + networkx."""
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            import networkx as nx
+        except ImportError:
+            raise ImportError("Install matplotlib and networkx: pip install matplotlib networkx")
 
-        data = graph.to_dict()
-        nodes = data.get("nodes", {})
-        edges = data.get("edges", {})
+        G = nx.Graph()
+        highlights = highlight or self._highlighted
 
-        G = nx.DiGraph()
-
-        # Color map
-        colors = {
-            "document": "#4CAF50", "invoice": "#4CAF50", "contract": "#2196F3",
-            "report": "#9C27B0", "receipt": "#8BC34A",
-            "ORG": "#FF9800", "MONEY": "#F44336", "DATE": "#00BCD4",
-            "PERSON": "#E91E63", "LOCATION": "#795548", "FIELD": "#607D8B",
-            "EMAIL": "#3F51B5", "PHONE": "#009688",
-        }
-        shapes = {
-            "document": "s", "invoice": "s", "contract": "s",
-            "report": "s", "receipt": "s",
+        # Color map by entity type
+        type_colors = {
+            "ORG": "#4A90D9", "PERSON": "#50C878", "MONEY": "#FFD700",
+            "DATE": "#FF6B6B", "EMAIL": "#9B59B6", "PHONE": "#E67E22",
+            "LOCATION": "#1ABC9C",
         }
 
-        node_colors = []
-        node_sizes = []
-        node_labels = {}
-        node_alphas = []
-        highlight_set = set(highlight_nodes) if highlight_nodes else None
+        # Add nodes
+        for key, node in self.graph.nodes.items():
+            G.add_node(key, label=node["text"], type=node["type"])
 
-        for node_id, props in nodes.items():
-            G.add_node(node_id)
-            node_type = props.get("type", "default")
-            color = colors.get(node_type, "#9E9E9E")
-            label = props.get("text", node_id)
-            if len(label) > 20:
-                label = label[:17] + "..."
-            node_labels[node_id] = label
+        # Add edges
+        for edge in self.graph.edges:
+            if edge["source"] in G.nodes and edge["target"] in G.nodes:
+                G.add_edge(edge["source"], edge["target"],
+                           relation=edge["relation"])
 
-            # Highlighting: bright if highlighted, dim if not
-            if highlight_set:
-                if node_id in highlight_set:
-                    node_colors.append(color)
-                    node_alphas.append(1.0)
-                    node_sizes.append(900 if node_type in ("document", "invoice", "contract", "report", "receipt") else 500)
-                else:
-                    node_colors.append("#444444")
-                    node_alphas.append(0.3)
-                    node_sizes.append(200)
-            else:
-                node_colors.append(color)
-                node_alphas.append(0.9)
-                if node_type in ("document", "invoice", "contract", "report", "receipt"):
-                    node_sizes.append(800)
-                else:
-                    node_sizes.append(400)
-
-        for edge in edges:
-            G.add_edge(edge["from"], edge["to"], label=edge.get("relation", ""))
-
-        if G.number_of_nodes() == 0:
+        if len(G.nodes) == 0:
+            logger.warning("Empty graph — nothing to visualize")
             return output
 
-        # Layout
-        try:
-            pos = nx.spring_layout(G, k=2.5, iterations=50, seed=42)
-        except Exception:
-            pos = nx.circular_layout(G)
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
 
-        # Draw
-        fig, ax = plt.subplots(figsize=(width, height), facecolor="#1a1a2e")
-        ax.set_facecolor("#1a1a2e")
+        # Node colors and sizes
+        node_colors = []
+        node_sizes = []
+        for node in G.nodes():
+            ntype = G.nodes[node].get("type", "")
+            base_color = type_colors.get(ntype, "#CCCCCC")
+            if highlights and node in highlights:
+                node_colors.append("#FF4444")
+                node_sizes.append(800)
+            else:
+                node_colors.append(base_color)
+                node_sizes.append(400)
 
-        # Draw edges
-        edge_alpha = 0.3 if highlight_set else 0.6
-        nx.draw_networkx_edges(G, pos, ax=ax, edge_color="#444444",
-                               arrows=True, arrowsize=15, arrowstyle="-|>",
-                               width=1.0, alpha=edge_alpha, connectionstyle="arc3,rad=0.1")
+        nx.draw_networkx_nodes(G, pos, node_color=node_colors,
+                                node_size=node_sizes, alpha=0.9, ax=ax)
+        nx.draw_networkx_edges(G, pos, alpha=0.3, edge_color="#888888", ax=ax)
 
-        # Draw edge labels
-        edge_labels = nx.get_edge_attributes(G, "label")
-        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, ax=ax,
-                                      font_size=6, font_color="#888888",
-                                      bbox=dict(boxstyle="round,pad=0.1",
-                                                facecolor="#1a1a2e", edgecolor="none"))
+        # Labels
+        labels = {n: G.nodes[n].get("label", n)[:20] for n in G.nodes()}
+        nx.draw_networkx_labels(G, pos, labels, font_size=7, ax=ax)
 
-        # Draw nodes
-        nx.draw_networkx_nodes(G, pos, ax=ax, node_color=node_colors,
-                               node_size=node_sizes, edgecolors="#333333",
-                               linewidths=1.0, alpha=0.9)
-
-        # Draw labels — only highlighted labels if highlighting
-        if highlight_set:
-            highlighted_labels = {k: v for k, v in node_labels.items() if k in highlight_set}
-            dimmed_labels = {k: v for k, v in node_labels.items() if k not in highlight_set}
-            nx.draw_networkx_labels(G, pos, labels=highlighted_labels, ax=ax,
-                                    font_size=8, font_color="white", font_weight="bold")
-            nx.draw_networkx_labels(G, pos, labels=dimmed_labels, ax=ax,
-                                    font_size=5, font_color="#555555")
-        else:
-            nx.draw_networkx_labels(G, pos, labels=node_labels, ax=ax,
-                                    font_size=7, font_color="white", font_weight="bold")
-
-        # Title
-        display_title = title or "DocQWise — Document Intelligence Graph"
-        ax.set_title(display_title,
-                     fontsize=14, color="#4CAF50", pad=20, fontweight="bold")
+        ax.set_title("Document Knowledge Graph", fontsize=14, fontweight="bold")
+        ax.axis("off")
 
         # Legend
-        legend_items = [
-            ("Document", "#4CAF50"), ("Contract", "#2196F3"),
-            ("Organization", "#FF9800"), ("Money", "#F44336"),
-            ("Date", "#00BCD4"), ("Field", "#607D8B"), ("Person", "#E91E63"),
-        ]
-        for i, (label, color) in enumerate(legend_items):
-            ax.plot([], [], "o", color=color, markersize=8, label=label)
-        ax.legend(loc="lower left", fontsize=8, facecolor="#16213e",
-                  edgecolor="#333333", labelcolor="white", ncol=2)
+        legend_elements = []
+        from matplotlib.patches import Patch
+        for etype, color in type_colors.items():
+            if any(G.nodes[n].get("type") == etype for n in G.nodes()):
+                legend_elements.append(Patch(facecolor=color, label=etype))
+        if highlights:
+            legend_elements.append(Patch(facecolor="#FF4444", label="Query Match"))
+        if legend_elements:
+            ax.legend(handles=legend_elements, loc="upper left", fontsize=8)
 
-        ax.axis("off")
+        # Determine format from extension
+        ext = os.path.splitext(output)[1].lower()
+        if ext in (".svg", ".pdf"):
+            format = ext[1:]
+
         plt.tight_layout()
-        plt.savefig(output, dpi=dpi, bbox_inches="tight", facecolor="#1a1a2e")
-        plt.close()
-
+        plt.savefig(output, format=format, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        logger.info(f"Graph saved: {output} ({len(G.nodes)} nodes, {len(G.edges)} edges)")
         return output
 
-    @staticmethod
-    def to_html(graph: DocumentGraph) -> str:
-        """Generate interactive HTML visualization."""
-        data = graph.to_dict()
-        nodes = data.get("nodes", {})
-        edges = data.get("edges", {})
+    def to_html(self, output: str) -> str:
+        """Render interactive graph using vis.js."""
+        highlights = self._highlighted
 
-        colors = {
-            "document": "#4CAF50", "invoice": "#4CAF50", "contract": "#2196F3",
-            "report": "#9C27B0", "ORG": "#FF9800", "MONEY": "#F44336",
-            "DATE": "#00BCD4", "PERSON": "#E91E63", "FIELD": "#607D8B",
-        }
+        nodes_js = []
+        for key, node in self.graph.nodes.items():
+            type_colors = {
+                "ORG": "#4A90D9", "PERSON": "#50C878", "MONEY": "#FFD700",
+                "DATE": "#FF6B6B", "EMAIL": "#9B59B6", "PHONE": "#E67E22",
+            }
+            color = "#FF4444" if key in highlights else type_colors.get(node["type"], "#CCCCCC")
+            size = 30 if key in highlights else 15
+            nodes_js.append({
+                "id": key, "label": node["text"][:25],
+                "color": color, "size": size,
+                "title": f"{node['text']} ({node['type']})",
+            })
 
-        nodes_json = []
-        for node_id, props in nodes.items():
-            node_type = props.get("type", "default")
-            color = colors.get(node_type, "#9E9E9E")
-            label = props.get("text", node_id)
-            if len(label) > 25:
-                label = label[:22] + "..."
-            nodes_json.append(f'{{"id":"{node_id}","label":"{label}","type":"{node_type}","color":"{color}"}}')
-
-        edges_json = []
-        for edge in edges:
-            edges_json.append(f'{{"from":"{edge["from"]}","to":"{edge["to"]}","label":"{edge["relation"]}"}}')
+        edges_js = []
+        for i, edge in enumerate(self.graph.edges):
+            edges_js.append({
+                "from": edge["source"], "to": edge["target"],
+                "title": edge["relation"], "id": str(i),
+            })
 
         html = f"""<!DOCTYPE html>
-<html><head><title>DocQWise Graph</title>
-<style>body{{margin:0;background:#1a1a2e;color:#eee;font-family:Arial}}h2{{text-align:center;padding:15px;color:#4CAF50}}#graph{{width:100%;height:calc(100vh - 60px)}}</style>
-<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-</head><body><h2>DocQWise — Document Intelligence Graph</h2><div id="graph"></div>
+<html><head><title>DocQWise Knowledge Graph</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/vis-network.min.js"></script>
+<style>body{{margin:0;font-family:sans-serif}}#graph{{width:100%;height:100vh}}
+h2{{text-align:center;padding:10px;margin:0;background:#1a1a2e;color:white}}</style></head>
+<body><h2>DocQWise Knowledge Graph</h2><div id="graph"></div>
 <script>
-var nodes=new vis.DataSet([{",".join(nodes_json)}].map(n=>({{id:n.id,label:n.label,color:{{background:n.color,border:n.color}},font:{{color:'#fff',size:12}},shape:['document','invoice','contract','report'].includes(n.type)?'box':'dot',size:['document','invoice','contract','report'].includes(n.type)?20:12}})));
-var edges=new vis.DataSet([{",".join(edges_json)}].map(e=>({{from:e.from,to:e.to,label:e.label,color:{{color:'#555'}},font:{{color:'#888',size:9}},arrows:'to',length:200}})));
-new vis.Network(document.getElementById('graph'),{{nodes:nodes,edges:edges}},{{physics:{{barnesHut:{{gravitationalConstant:-3000}}}},interaction:{{hover:true,zoomView:true}}}});
+var nodes = new vis.DataSet({json.dumps(nodes_js)});
+var edges = new vis.DataSet({json.dumps(edges_js)});
+var container = document.getElementById('graph');
+var data = {{nodes: nodes, edges: edges}};
+var options = {{
+  physics: {{stabilization: {{iterations: 100}}}},
+  nodes: {{shape: 'dot', font: {{size: 12}}}},
+  edges: {{color: '#888', arrows: 'to', smooth: true}}
+}};
+new vis.Network(container, data, options);
 </script></body></html>"""
-        return html
 
-    @staticmethod
-    def save(graph: DocumentGraph, output: str = "docqwise_graph.png",
-             highlight_nodes: list[str] = None, highlight_edges: list[tuple] = None,
-             title: str = None) -> str:
-        """Save graph as image (.png, .svg, .pdf) or interactive HTML (.html).
-
-        Args:
-            graph: DocumentGraph instance
-            output: file path
-            highlight_nodes: node IDs to highlight (from query result)
-            highlight_edges: (from, to) tuples to highlight
-            title: custom title (e.g. the question asked)
-        """
-        if output.endswith(".html"):
-            html = GraphVisualizer.to_html(graph, highlight_nodes=highlight_nodes,
-                                            highlight_edges=highlight_edges, title=title)
-            with open(output, "w") as f:
-                f.write(html)
-        else:
-            GraphVisualizer.to_image(graph, output=output, highlight_nodes=highlight_nodes,
-                                     highlight_edges=highlight_edges, title=title)
+        with open(output, "w") as f:
+            f.write(html)
+        logger.info(f"Interactive graph saved: {output}")
         return output
 
-    @staticmethod
-    def from_query(graph: DocumentGraph, query_result: dict,
-                   output: str = "docqwise_query_graph.png") -> str:
-        """Generate visualization highlighting the answer path for a specific query.
-
-        Args:
-            graph: DocumentGraph
-            query_result: result from GraphRAGEngine.query() — has evidence chain
-            output: file path (.png, .svg, .html)
-
-        Returns:
-            path to saved file
-        """
-        evidence = query_result.get("evidence", [])
-        connected_docs = query_result.get("graph_stats", {}).get("connected_documents", [])
-
-        # Collect highlighted nodes and edges from evidence chain
-        highlight_nodes = set(connected_docs)
-        highlight_edges = []
-
-        for ev in evidence:
-            entity = ev.get("entity", "")
-            target = ev.get("target", "")
-            # Find matching node IDs
-            data = graph.to_dict()
-            for node_id, props in data.get("nodes", {}).items():
-                text = props.get("text", "")
-                if entity and (entity.lower() in text.lower() or entity.lower() in node_id.lower()):
-                    highlight_nodes.add(node_id)
-                if target and (target.lower() in text.lower() or target.lower() in node_id.lower()):
-                    highlight_nodes.add(node_id)
-
-        # Build title from query
-        answer = query_result.get("answer", "")[:60]
-        source = query_result.get("source", "")
-        title = f"Q: {answer}"
-        if source:
-            title += f"  |  Source: {source}"
-
-        return GraphVisualizer.save(graph, output=output,
-                                     highlight_nodes=list(highlight_nodes), title=title)
+    def save(self, output: str) -> str:
+        """Save graph — auto-detect format from extension."""
+        ext = os.path.splitext(output)[1].lower()
+        if ext == ".html":
+            return self.to_html(output)
+        elif ext in (".png", ".svg", ".pdf"):
+            return self.to_image(output, format=ext[1:])
+        else:
+            return self.to_image(output)

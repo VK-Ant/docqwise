@@ -61,13 +61,12 @@ python-multipart>=0.0.6
 # Vector stores (optional — uncomment what you need)
 # chromadb>=0.4.0
 # qdrant-client>=1.7.0
-faiss-cpu>=1.7.0
+# faiss-cpu>=1.7.0
 # psycopg2-binary>=2.9.0
 # pymongo>=4.6.0
 
 # Graph (optional)
-networkx>=3.2.0
-matplotlib>=3.7.0
+# networkx>=3.2.0
 # neo4j>=5.0.0
 
 # Dev
@@ -75,8 +74,3 @@ pytest>=7.4.0
 pytest-cov>=4.1.0
 black>=23.0.0
 ruff>=0.1.0
--e 
-# Local model files (optional)
-# llama-cpp-python>=0.2.0
-# onnxruntime>=1.16.0
-# tflite-runtime>=2.14.0

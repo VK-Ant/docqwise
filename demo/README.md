@@ -8,22 +8,30 @@
 | `02_ollama.py` | AI extraction with local Ollama LLM | Ollama + `ollama pull nemotron-mini` |
 | `03_huggingface.py` | AI extraction with HuggingFace on GPU | `pip install transformers torch bitsandbytes accelerate` |
 | `04_rag.py` | RAG-based extraction (full pipeline) | `pip install sentence-transformers` + Ollama or HuggingFace |
-| `05_graphrag.py` | GraphRAG + graph visualization | `pip install sentence-transformers` + Ollama |
-| `local_demo.py` | Point at any folder — interactive Q&A | `pip install docqwise sentence-transformers` |
 
 ## Quick start
 
 ```bash
+# Step 1: Install
 pip install docqwise
+
+# Step 2: Run quickstart (works immediately, no ML needed)
 python demo/01_quickstart.py
 
-# AI extraction
+# Step 3: Try AI extraction (pick one)
 ollama pull nemotron-mini && python demo/02_ollama.py
+# or
+pip install transformers torch && python demo/03_huggingface.py
 
-# GraphRAG + visualization
-python demo/05_graphrag.py
-# Open docqwise_graph.html in your browser
-
-# Point at your own files
-python demo/local_demo.py "C:/MyDocuments"
+# Step 4: Try RAG extraction
+pip install sentence-transformers && python demo/04_rag.py
 ```
+
+## Sample documents included
+
+| File | Type | Description |
+|---|---|---|
+| `sample_invoice.pdf` | Invoice | Acme Corp → TechStart, INR 2,18,300 |
+| `sample_contract.pdf` | Contract | Service agreement, 12 months, liability cap |
+| `sample_sales.csv` | CSV | 10 sales records with vendor, amount, status |
+| `sample_data.json` | JSON | Company departments with headcount and budget |

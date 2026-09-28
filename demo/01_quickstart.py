@@ -2,11 +2,13 @@
 DocQWise Demo 1: Quick Start
 ==============================
 
-No ML models needed. Works with just: pip install docqwise
+AI-powered document intelligence. Works with Ollama locally.
 
 This demo shows:
   - Read PDF, CSV, JSON documents
-  - Extract fields, tables, entities
+  - AI-powered field extraction (Ollama / HuggingFace)
+  - Agentic multi-pass extraction
+  - Table and entity extraction
   - Classify documents
   - Compare documents
   - Schema detection
@@ -16,6 +18,7 @@ This demo shows:
 
 Requirements:
     pip install docqwise
+    ollama pull nemotron-mini
 
 Run:
     python demo/01_quickstart.py
@@ -29,7 +32,7 @@ from docqwise import Docqwise
 
 def main():
     print("=" * 60)
-    print("DocQWise v0.2.0 — Quick Start Demo")
+    print("DocQWise v0.4.0 — Quick Start Demo")
     print("Read. Extract. Retrieve.")
     print("=" * 60)
     print()
@@ -59,17 +62,27 @@ def main():
     print(f"    Re-ingest invoice: {r['processed']} processed (0 = skipped)")
     print()
 
-    # ── 3. Extract Fields ──
-    print("[3] FIELD EXTRACTION")
-    print("    Extract structured data from any document")
+    # ── 3. AI-Powered Field Extraction ──
+    print("[3] AI-POWERED FIELD EXTRACTION")
+    print("    Extract structured data using LLM (Ollama/HuggingFace)")
     print()
-    result = dq.extract_fields("demo/sample_invoice.pdf", template="invoice", method="regex")
+    result = dq.extract_fields("demo/sample_invoice.pdf", template="invoice")
     for name, field in result.fields.items():
         print(f"    {name:20s} = {str(field.value):25s} [{field.confidence:.2f}]")
     print()
 
-    # ── 4. Custom Schema ──
-    print("[4] CUSTOM SCHEMA")
+    # ── 4. Agentic Extraction ──
+    print("[4] AGENTIC EXTRACTION")
+    print("    Multi-pass, self-correcting AI extraction")
+    print()
+    result = dq.extract_agentic("demo/sample_invoice.pdf", template="invoice")
+    for name, field in result.fields.items():
+        print(f"    {name:20s} = {str(field.value):25s} [{field.confidence:.2f}]")
+    print(f"    Strategy: {result.strategy_used}")
+    print()
+
+    # ── 5. Custom Schema ──
+    print("[5] CUSTOM SCHEMA")
     print("    Define exactly what fields you want")
     print()
     schema = {
@@ -77,48 +90,48 @@ def main():
         "total_value": {"type": "number", "description": "Total monetary value"},
         "due_date": {"type": "date", "description": "Payment due date"},
     }
-    result = dq.extract_fields("demo/sample_invoice.pdf", schema=schema, method="regex")
+    result = dq.extract_fields("demo/sample_invoice.pdf", schema=schema)
     for name, field in result.fields.items():
         print(f"    {name:20s} = {field.value}")
     print()
 
-    # ── 5. Extract Tables ──
-    print("[5] TABLE EXTRACTION")
+    # ── 6. Extract Tables ──
+    print("[6] TABLE EXTRACTION")
     tables = dq.extract_tables("demo/sample_invoice.pdf")
     print(f"    Tables found: {len(tables)}")
     print()
 
-    # ── 6. Entity Extraction ──
-    print("[6] ENTITY EXTRACTION")
-    entities = dq.extract_entities("demo/sample_invoice.pdf", method="regex")
+    # ── 7. Entity Extraction ──
+    print("[7] ENTITY EXTRACTION")
+    entities = dq.extract_entities("demo/sample_invoice.pdf")
     for e in entities[:5]:
         print(f"    [{e.entity_type:10s}] {e.text}")
     print()
 
-    # ── 7. Classification ──
-    print("[7] DOCUMENT CLASSIFICATION")
+    # ── 8. Classification ──
+    print("[8] DOCUMENT CLASSIFICATION")
     for doc_path in ["demo/sample_invoice.pdf", "demo/sample_contract.pdf"]:
         labels = dq.classify(doc_path)
         top = labels[0]
         print(f"    {os.path.basename(doc_path):25s} → {top['label']} ({top['confidence']:.0%})")
     print()
 
-    # ── 8. Comparison ──
-    print("[8] DOCUMENT COMPARISON")
+    # ── 9. Comparison ──
+    print("[9] DOCUMENT COMPARISON")
     diff = dq.compare("demo/sample_invoice.pdf", "demo/sample_contract.pdf")
     print(f"    Similarity: {diff['similarity']:.1%}")
     print(f"    Changes: +{diff['additions_count']} / -{diff['deletions_count']}")
     print()
 
-    # ── 9. Schema Detection ──
-    print("[9] SCHEMA DETECTION")
+    # ── 10. Schema Detection ──
+    print("[10] SCHEMA DETECTION")
     schema = dq.detect_schema("demo/sample_sales.csv")
     for f in schema["fields"][:5]:
         print(f"    {f['name']:15s} → {f['type']}")
     print()
 
-    # ── 10. Q&A on Structured Data ──
-    print("[10] STRUCTURED DATA Q&A")
+    # ── 11. Q&A on Structured Data ──
+    print("[11] STRUCTURED DATA Q&A")
     print("     Exact computation — real math, not LLM guessing")
     print()
     for q in ["What is the total amount?", "What is the average amount?",
@@ -139,7 +152,7 @@ def main():
     print("[12] SELF-IMPROVING CORRECTIONS")
     print("     Fix once → auto-applied on future similar documents")
     print()
-    result = dq.extract_fields("demo/sample_invoice.pdf", template="invoice", method="regex")
+    result = dq.extract_fields("demo/sample_invoice.pdf", template="invoice")
     result.correct({"tax": 33300.00, "gst_number": "29AABCU9603R1ZM"})
     print(f"     Corrected: tax=33300.0, gst_number=29AABCU9603R1ZM")
     print(f"     Stored: {dq.learning_report()['total_corrections']} corrections")
@@ -173,7 +186,7 @@ def main():
     # Cleanup
     shutil.rmtree(store, ignore_errors=True)
     print("=" * 60)
-    print("ALL 14 FEATURES WORKING")
+    print("ALL 15 FEATURES WORKING")
     print()
     print("Next: Try AI-powered extraction →")
     print("  python demo/02_ollama.py      (local Ollama LLM)")

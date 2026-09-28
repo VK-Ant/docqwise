@@ -30,8 +30,8 @@ class LLMFieldExtractor(BaseFieldExtractor):
 
         # Priority 1: Ollama
         try:
-            from urllib.request import urlopen
-            urlopen("http://localhost:11434/api/tags", timeout=2)
+            import urllib.request
+            urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
             from docqwise.llm.ollama import OllamaLLM
             model = self._model or "nemotron-mini"
             self._llm = OllamaLLM(model=model)
@@ -44,7 +44,7 @@ class LLMFieldExtractor(BaseFieldExtractor):
             from docqwise.llm.hf_llm import HuggingFaceLLM
             import torch
             if torch.cuda.is_available():
-                model = self._model or "Qwen/Qwen2.5-7B-Instruct"
+                model = self._model or "Qwen/Qwen2.5-3B-Instruct"
                 self._llm = HuggingFaceLLM(model_name=model, quantize="4bit")
                 return self._llm
         except ImportError:
@@ -64,7 +64,7 @@ class LLMFieldExtractor(BaseFieldExtractor):
 
     def extract_fields(self, document: DocqwiseDocument,
                        schema: dict = None, prompt: str = None,
-                       prompt_template: str = None, system_prompt: str = None) -> ExtractionResult:
+                       prompt_template: str = None) -> ExtractionResult:
         llm = self._get_llm()
 
         if llm is None:

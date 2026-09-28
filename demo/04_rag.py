@@ -225,7 +225,7 @@ JSON:""",
     # ── 10. Method Comparison ──
     print("10. METHOD COMPARISON")
     print("-" * 60)
-    for method in ["rag", "llm", "regex"]:
+    for method in ["rag", "llm", "agentic"]:
         r = dq.extract_fields("demo/sample_invoice.pdf", template="invoice", method=method)
         print(f"    {method:6s} → strategy={r.strategy_used:6s} fields={len(r.fields):2d} confidence={r.confidence:.2f}")
     print()

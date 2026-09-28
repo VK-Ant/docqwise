@@ -17,7 +17,7 @@ class HuggingFaceLLM(BaseLLM):
 
     def __init__(
         self,
-        model_name: str = "Qwen/Qwen2.5-7B-Instruct",
+        model_name: str = "Qwen/Qwen2.5-3B-Instruct",
         quantize: str = "4bit",
         device: str = "auto",
         max_new_tokens: int = 2000,
@@ -79,16 +79,17 @@ class HuggingFaceLLM(BaseLLM):
 
         logger.info(f"Model loaded: {self.model_name}")
 
-    def generate(self, prompt: str, system_prompt: str = None, **kwargs) -> str:
+    def generate(self, prompt: str, **kwargs) -> str:
         self._ensure_loaded()
 
         max_tokens = kwargs.get("max_new_tokens", self.max_new_tokens)
         temperature = kwargs.get("temperature", 0.1)
+        system_prompt = kwargs.get("system_prompt",
+            "You are a document extraction AI. Always respond with valid JSON only. No explanation. No markdown.")
 
         # Build chat messages
-        sys_msg = system_prompt or "You are a document extraction AI. Always respond with valid JSON only. No explanation. No markdown."
         messages = [
-            {"role": "system", "content": sys_msg},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
 

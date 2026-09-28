@@ -149,26 +149,7 @@ JSON:""",
         print(f"   {name:20s} = {field.value}")
     print()
 
-    # ── 6. System Prompt (set LLM role) ──
-    print("6. SYSTEM PROMPT")
-    print("-" * 60)
-    result = dq.extract_fields(
-        "demo/sample_invoice.pdf",
-        llm=llm,
-        system_prompt="You are an accounts payable specialist. Extract financial details precisely.",
-        prompt="Extract vendor, total, tax from this invoice.
-
-Document:
-{context}
-
-JSON:",
-    )
-    print(f"   Strategy: {result.strategy_used}")
-    for name, field in result.fields.items():
-        print(f"   {name:20s} = {field.value}")
-    print()
-
-    # ── 7. Prompt Template with Schema ──
+    # ── 6. Prompt Template with Schema ──
     print("6. PROMPT TEMPLATE (your template + your schema)")
     print("-" * 60)
     result = dq.extract_fields(
@@ -199,7 +180,7 @@ JSON:""",
     print()
 
     # ── 7. Auto Extract ──
-    print("8. AUTO EXTRACT (LLM decides what to extract)")
+    print("7. AUTO EXTRACT (LLM decides what to extract)")
     print("-" * 60)
     result = dq.auto_extract("demo/sample_invoice.pdf")
     print(f"   Strategy: {result.strategy_used}")
@@ -208,7 +189,7 @@ JSON:""",
     print()
 
     # ── 8. Entity Extraction ──
-    print("9. ENTITY EXTRACTION")
+    print("8. ENTITY EXTRACTION")
     print("-" * 60)
     entities = dq.extract_entities("demo/sample_contract.pdf")
     for e in entities[:8]:
@@ -216,7 +197,7 @@ JSON:""",
     print()
 
     # ── 9. Structured Data Q&A ──
-    print("10. STRUCTURED DATA Q&A")
+    print("9. STRUCTURED DATA Q&A")
     print("-" * 60)
     dq.ingest("demo/sample_sales.csv", embed=False)
     for q in ["What is the total amount?", "What is the average amount?"]:
@@ -225,7 +206,7 @@ JSON:""",
     print()
 
     # ── 10. Free GPU Memory ──
-    print("11. CLEANUP")
+    print("10. CLEANUP")
     print("-" * 60)
     llm.unload()
     print("    GPU memory freed")

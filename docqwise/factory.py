@@ -29,8 +29,8 @@ class ExtractorFactory:
     EXTRACTORS = {
         "rag": "docqwise.extractors.rag_extractor.RAGExtractor",
         "llm": "docqwise.extractors.llm_extractor.LLMFieldExtractor",
-        "regex": "docqwise.extractors.field_extractor.RegexFieldExtractor",
         "vision": "docqwise.extractors.multimodal_extractor.MultimodalExtractor",
+        "agentic": "docqwise.agent.extraction_agent.ExtractionAgent",
     }
 
     @classmethod
@@ -59,8 +59,13 @@ class ExtractorFactory:
         elif method == "vision":
             return extractor_class(model=model or "gpt-4o-mini",
                                    api_key=kwargs.get("api_key"))
-        elif method == "regex":
-            return extractor_class()
+        elif method == "agentic":
+            return extractor_class(
+                llm=llm, embedder=embedder, model=model,
+                max_retries=kwargs.get("max_retries", 2),
+                cross_check=kwargs.get("cross_check", True),
+                confidence_threshold=kwargs.get("confidence_threshold", 0.6),
+            )
         else:
             return extractor_class()
 
@@ -92,8 +97,8 @@ class LLMFactory:
 
         # Ollama (local, free, fast startup)
         try:
-            from urllib.request import urlopen
-            urlopen("http://localhost:11434/api/tags", timeout=2)
+            import urllib.request
+            urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
             from docqwise.llm.ollama import OllamaLLM
             return OllamaLLM(model=model or "nemotron-mini")
         except Exception:
@@ -127,8 +132,8 @@ class LLMFactory:
         """List available LLM backends."""
         backends = []
         try:
-            from urllib.request import urlopen
-            urlopen("http://localhost:11434/api/tags", timeout=2)
+            import urllib.request
+            urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
             backends.append("ollama")
         except Exception:
             pass

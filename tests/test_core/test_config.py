@@ -39,5 +39,5 @@ def test_engine_metrics():
 
     dq = Docqwise()
     m = dq.metrics()
-    assert m["version"] == "0.3.1"
+    assert m["version"] == "0.4.0"
     assert m["strategy"] == "auto"
